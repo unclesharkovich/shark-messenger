@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🦈 SharkMessenger</title>
+    <link rel="stylesheet" href="shark-theme.css">
+</head>
+<body>
+
+    <!-- Регистрация -->
+    <div id="registerPage" class="register-overlay">
+        <div class="register-card">
+            <div class="shark-logo">🦈</div>
+            <h1 class="shark-title">SharkMessenger</h1>
+            <p class="shark-subtitle">Дядя Шарк приветствует тебя!</p>
+
+            <div class="avatar-section">
+                <div class="avatar-circle" id="avatarCircle" onclick="document.getElementById('avatarFile').click()">
+                    <span id="avatarPlaceholder">🦈</span>
+                    <img id="avatarImg" style="display:none">
+                </div>
+                <input type="file" id="avatarFile" accept="image/*" hidden onchange="uploadAvatar(event)">
+                <p style="color:#7ba4c7;font-size:12px;">Загрузи аватарку</p>
+            </div>
+
+            <div class="input-group">
+                <label>Имя пользователя</label>
+                <input type="text" id="usernameInput" placeholder="Дядя Шарк" maxlength="20">
+            </div>
+
+            <div class="input-group">
+                <label>Кастомный тег (по желанию)</label>
+                <input type="text" id="tagInput" placeholder="#твойТег" maxlength="16">
+                <small>Будет так: Дядя Шарк <b>#твойТег</b></small>
+            </div>
+
+            <button class="btn-shark" onclick="register()">🦈 Войти</button>
+        </div>
+    </div>
+
+    <!-- Чат -->
+    <div id="chatPage" class="chat-layout" style="display:none">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-user">
+                    <img id="sidebarAvatar" src="" alt="">
+                    <div>
+                        <strong id="sidebarName"></strong>
+                        <span id="sidebarTag" class="tag-display"></span>
+                    </div>
+                </div>
+                <button class="btn-icon" onclick="toggleTagEditor()">⚙️</button>
+            </div>
+
+            <div id="tagEditor" class="tag-editor hidden">
+                <input type="text" id="tagEditInput" placeholder="#новыйТег" maxlength="16">
+                <button class="btn-shark small" onclick="updateTag()">✓</button>
+            </div>
+
+            <div class="rooms-section">
+                <h3>🌊 Комнаты</h3>
+                <div id="roomsList"></div>
+            </div>
+
+            <div class="online-section">
+                <h3>🦈 Онлайн: <span id="onlineCount">0</span></h3>
+            </div>
+        </aside>
+
+        <main class="chat-main">
+            <header class="chat-header">
+                <h2 id="currentRoom">🦈 Акулья бухта</h2>
+                <span id="roomOnline">0 в сети</span>
+            </header>
+
+            <div class="messages" id="messagesContainer"></div>
+
+            <div class="sticker-panel">
+                <div class="sticker-grid" id="stickerGrid"></div>
+                <button class="btn-sticker-toggle" onclick="toggleStickers()">🦈 Стикеры</button>
+            </div>
+
+            <div class="input-area">
+                <textarea id="messageInput" placeholder="Сообщение..." rows="1" onkeydown="handleKey(event)"></textarea>
+                <button class="btn-shark" onclick="sendMessage()">➤</button>
+            </div>
+        </main>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="shark-app.js"></script>
+</body>
+</html>
