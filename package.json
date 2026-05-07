@@ -1,14 +1,15 @@
 {
   "name": "shark-messenger",
-  "version": "1.0.0",
+  "version": "4.0.0",
   "description": "SharkMessenger — синее чем ты думаешь",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "socket.io": "^4.7.2",
-    "uuid": "^9.0.0"
+    "express": "^4.21.0",
+    "socket.io": "^4.7.5",
+    "uuid": "^10.0.0",
+    "multer": "^1.4.5-lts.1"
   }
 }
