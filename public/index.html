@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🦈 SharkMessenger</title>
     <link rel="stylesheet" href="shark-theme.css">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#000000">
 </head>
 <body>
 
@@ -16,26 +18,26 @@
             <p class="shark-subtitle">Дядя Шарк приветствует тебя!</p>
 
             <div class="avatar-section">
-                <div class="avatar-circle" id="avatarCircle" onclick="document.getElementById('avatarFile').click()">
+                <div class="avatar-circle" id="avatarCircle" onclick="document.getElementById('avatarFileInput').click()">
                     <span id="avatarPlaceholder">🦈</span>
-                    <img id="avatarImg" style="display:none">
+                    <img id="avatarPreview" style="display:none">
                 </div>
-                <input type="file" id="avatarFile" accept="image/*" hidden onchange="uploadAvatar(event)">
+                <input type="file" id="avatarFileInput" accept="image/*" hidden>
                 <p style="color:#7ba4c7;font-size:12px;">Загрузи аватарку</p>
             </div>
 
             <div class="input-group">
                 <label>Имя пользователя</label>
-                <input type="text" id="usernameInput" placeholder="Дядя Шарк" maxlength="20">
+                <input type="text" id="regUsername" placeholder="Дядя Шарк" maxlength="20">
             </div>
 
             <div class="input-group">
                 <label>Кастомный тег (по желанию)</label>
-                <input type="text" id="tagInput" placeholder="#твойТег" maxlength="16">
+                <input type="text" id="regTag" placeholder="#твойТег" maxlength="16">
                 <small>Будет так: Дядя Шарк <b>#твойТег</b></small>
             </div>
 
-            <button class="btn-shark" onclick="register()">🦈 Войти</button>
+            <button class="btn-shark" id="regButton">🦈 Войти</button>
         </div>
     </div>
 
@@ -44,46 +46,47 @@
         <aside class="sidebar">
             <div class="sidebar-header">
                 <div class="sidebar-user">
-                    <img id="sidebarAvatar" src="" alt="">
+                    <img id="sidebarAvatar" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='40' height='40' fill='%23333'/%3E%3Ctext x='50%25' y='55%25' text-anchor='middle' fill='white' font-size='20'%3E🦈%3C/text%3E%3C/svg%3E" alt="">
                     <div>
-                        <strong id="sidebarName"></strong>
+                        <strong id="sidebarName">Акула</strong>
                         <span id="sidebarTag" class="tag-display"></span>
                     </div>
                 </div>
-                <button class="btn-icon" onclick="toggleTagEditor()">⚙️</button>
+                <button class="btn-icon" id="tagToggleBtn">⚙️</button>
             </div>
 
             <div id="tagEditor" class="tag-editor hidden">
                 <input type="text" id="tagEditInput" placeholder="#новыйТег" maxlength="16">
-                <button class="btn-shark small" onclick="updateTag()">✓</button>
+                <button class="btn-shark small" id="tagSaveBtn">✓</button>
             </div>
 
             <div class="rooms-section">
-                <h3>🌊 Комнаты</h3>
-                <div id="roomsList"></div>
-            </div>
-
-            <div class="online-section">
-                <h3>🦈 Онлайн: <span id="onlineCount">0</span></h3>
+                <h3>🦈 Пользователи онлайн</h3>
+                <div id="usersList"></div>
             </div>
         </aside>
 
         <main class="chat-main">
             <header class="chat-header">
-                <h2 id="currentRoom">🦈 Акулья бухта</h2>
-                <span id="roomOnline">0 в сети</span>
+                <h2 id="currentRoom">🦈 Выбери пользователя</h2>
+                <span id="roomOnline"></span>
             </header>
 
-            <div class="messages" id="messagesContainer"></div>
+            <div class="messages" id="messagesContainer">
+                <div style="text-align:center;color:#999;padding:40px;">Выбери пользователя из списка слева</div>
+            </div>
 
             <div class="sticker-panel">
                 <div class="sticker-grid" id="stickerGrid"></div>
-                <button class="btn-sticker-toggle" onclick="toggleStickers()">🦈 Стикеры</button>
+                <div class="sticker-actions">
+                    <button class="btn-sticker" id="stickerToggleBtn">🦈 Стикеры</button>
+                    <button class="btn-upload-sticker" id="stickerUploadBtn">+ Загрузить</button>
+                </div>
             </div>
 
             <div class="input-area">
-                <textarea id="messageInput" placeholder="Сообщение..." rows="1" onkeydown="handleKey(event)"></textarea>
-                <button class="btn-shark" onclick="sendMessage()">➤</button>
+                <textarea id="messageInput" placeholder="Сообщение..." rows="1"></textarea>
+                <button class="btn-send" id="sendBtn">➤</button>
             </div>
         </main>
     </div>
