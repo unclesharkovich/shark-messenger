@@ -1,162 +1,358 @@
+// ===== ПЕРЕМЕННЫЕ =====
 let socket;
 let currentUser = null;
-let currentRoom = 'shark-tank';
-let avatarData = null;
+let currentChatId = null;
+let allStickers = [];
+let peerConnection = null;
+let localStream = null;
+let onlineUsers = [];
 
-function connectSocket() {
+// ===== PWA =====
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
+}
+
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+});
+
+// ===== ПОДКЛЮЧЕНИЕ =====
+function connect() {
     socket = io();
-
+    
     socket.on('registered', (data) => {
         currentUser = data.user;
-        loadRooms();
+        showChat();
         loadStickers();
     });
 
-    socket.on('newMessage', (msg) => {
-        if (msg.room === currentRoom) addMessage(msg, false);
+    socket.on('usersUpdate', (users) => {
+        onlineUsers = users.filter(u => u.id !== currentUser?.id);
+        renderUserList();
     });
 
-    socket.on('newSticker', (msg) => {
-        if (msg.room === currentRoom) addSticker(msg, false);
+    socket.on('newPrivateMessage', (msg) => {
+        if (currentChatId === msg.chatId || msg.senderId === currentChatId) {
+            renderMessage(msg, msg.senderId === currentUser?.id);
+        }
+        updateChatPreview(msg);
     });
 
-    socket.on('userJoined', (data) => {
-        document.getElementById('onlineCount').textContent = data.total;
-        document.getElementById('roomOnline').textContent = data.total + ' в сети';
+    socket.on('newPrivateSticker', (msg) => {
+        if (currentChatId === msg.chatId || msg.senderId === currentChatId) {
+            renderSticker(msg, msg.senderId === currentUser?.id);
+        }
     });
 
-    socket.on('userLeft', (data) => {
-        document.getElementById('onlineCount').textContent = data.total;
-        document.getElementById('roomOnline').textContent = data.total + ' в сети';
-    });
-
-    socket.on('roomSwitched', (data) => {
-        currentRoom = data.room;
+    socket.on('chatHistory', (data) => {
         document.getElementById('messagesContainer').innerHTML = '';
-        data.history.forEach(msg => {
-            if (msg.sticker) addSticker(msg, msg.sender === currentUser?.username);
-            else addMessage(msg, msg.sender === currentUser?.username);
+        data.messages.forEach(m => {
+            if (m.sticker) renderSticker(m, m.senderId === currentUser?.id);
+            else renderMessage(m, m.senderId === currentUser?.id);
         });
     });
+
+    // Звонки
+    socket.on('incomingCall', (data) => {
+        if (confirm(`📞 Входящий ${data.callType === 'video' ? 'видео' : 'голосовой'} звонок от ${data.callerName}`)) {
+            startCall(data.callerId, data.callType, data.offer);
+        } else {
+            socket.emit('rejectCall', { targetId: data.callerId });
+        }
+    });
+
+    socket.on('callAnswered', async (data) => {
+        if (peerConnection) {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+        }
+    });
+
+    socket.on('iceCandidate', async (data) => {
+        if (peerConnection && data.candidate) {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+        }
+    });
+
+    socket.on('callRejected', () => {
+        endCall();
+        alert('📞 Звонок отклонён');
+    });
+
+    socket.on('callEnded', () => {
+        endCall();
+        alert('📞 Звонок завершён');
+    });
+
+    socket.on('newStickerAvailable', (data) => {
+        allStickers.push(data.url);
+        renderStickerGrid();
+    });
 }
 
-function uploadAvatar(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        avatarData = e.target.result;
-        document.getElementById('avatarImg').src = avatarData;
-        document.getElementById('avatarImg').style.display = 'block';
-        document.getElementById('avatarPlaceholder').style.display = 'none';
-    };
-    reader.readAsDataURL(file);
-}
-
+// ===== РЕГИСТРАЦИЯ =====
 function register() {
-    const username = document.getElementById('usernameInput').value.trim() || 'Дядя Шарк';
-    const tag = document.getElementById('tagInput').value.trim();
-
-    document.getElementById('registerPage').style.display = 'none';
-    document.getElementById('chatPage').style.display = 'flex';
+    const username = document.getElementById('regUsername').value.trim() || 'Акула';
+    const tag = document.getElementById('regTag').value.trim();
+    
     document.getElementById('sidebarName').textContent = username;
     document.getElementById('sidebarTag').textContent = tag;
-    if (avatarData) document.getElementById('sidebarAvatar').src = avatarData;
-
-    connectSocket();
-    socket.emit('register', { username, customTag: tag, avatar: avatarData });
+    
+    const avatarFile = document.getElementById('avatarFile').files[0];
+    if (avatarFile) {
+        const formData = new FormData();
+        formData.append('avatar', avatarFile);
+        fetch('/api/avatar', { method: 'POST', body: formData })
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('sidebarAvatar').src = data.url;
+                connect();
+                socket.emit('register', { username, customTag: tag, avatar: data.url });
+            });
+    } else {
+        connect();
+        socket.emit('register', { username, customTag: tag });
+    }
 }
 
-function loadRooms() {
-    fetch('/api/rooms')
-        .then(r => r.json())
-        .then(rooms => {
-            const list = document.getElementById('roomsList');
-            list.innerHTML = rooms.map(r =>
-                `<div class="room-item ${r.id === currentRoom ? 'active' : ''}" onclick="switchRoom('${r.id}')">${r.name} (${r.online})</div>`
-            ).join('');
-        });
+function showChat() {
+    document.getElementById('registerPage').classList.add('hidden');
+    document.getElementById('chatPage').classList.remove('hidden');
 }
 
-function switchRoom(roomId) {
-    document.getElementById('currentRoom').textContent =
-        roomId === 'shark-tank' ? '🦈 Акулья бухта' :
-        roomId === 'deep-ocean' ? '🌊 Глубокий океан' : '🐠 Коралловый риф';
-    if (socket) socket.emit('switchRoom', roomId);
-    loadRooms();
+// ===== СПИСОК ПОЛЬЗОВАТЕЛЕЙ =====
+function renderUserList() {
+    const list = document.getElementById('usersList');
+    list.innerHTML = onlineUsers.map(u => `
+        <div class="user-item ${currentChatId === u.id ? 'active' : ''}" onclick="openPrivateChat('${u.id}')">
+            <img src="${u.avatar || ''}" onerror="this.remove()" class="user-avatar">
+            <div class="user-info">
+                <div class="user-name">${escapeHtml(u.username)}</div>
+                ${u.tag ? `<div class="user-tag">${escapeHtml(u.tag)}</div>` : ''}
+            </div>
+            <div class="user-online"></div>
+            <div class="user-actions">
+                <button class="btn-call" onclick="event.stopPropagation(); startCall('${u.id}', 'audio')" title="Звонок">📞</button>
+                <button class="btn-call" onclick="event.stopPropagation(); startCall('${u.id}', 'video')" title="Видео">📹</button>
+            </div>
+        </div>
+    `).join('');
 }
 
-function toggleTagEditor() {
-    document.getElementById('tagEditor').classList.toggle('hidden');
-    document.getElementById('tagEditInput').focus();
+// ===== ЛИЧНЫЕ ЧАТЫ =====
+function openPrivateChat(userId) {
+    currentChatId = userId;
+    document.getElementById('chatTargetName').textContent = 
+        onlineUsers.find(u => u.id === userId)?.username || 'Собеседник';
+    document.getElementById('chatArea').classList.remove('hidden');
+    document.getElementById('emptyChat').classList.add('hidden');
+    renderUserList();
+    
+    socket.emit('getChatHistory', { targetId: userId });
 }
 
-function updateTag() {
-    const tag = document.getElementById('tagEditInput').value.trim();
-    document.getElementById('sidebarTag').textContent = tag;
-    document.getElementById('tagEditor').classList.add('hidden');
-    if (socket) socket.emit('updateTag', tag);
-}
-
+// ===== СООБЩЕНИЯ =====
 function sendMessage() {
-    const text = document.getElementById('messageInput').value.trim();
-    if (!text || !socket) return;
-    socket.emit('sendMessage', { text });
-    document.getElementById('messageInput').value = '';
+    const input = document.getElementById('messageInput');
+    const text = input.value.trim();
+    if (!text || !currentChatId) return;
+    
+    socket.emit('privateMessage', { targetId: currentChatId, text });
+    input.value = '';
+    input.style.height = '50px';
 }
 
-function handleKey(event) {
-    if (event.key === 'Enter' && !event.shiftKey) {
-        event.preventDefault();
+function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
         sendMessage();
     }
 }
 
-function addMessage(msg, isOwn) {
+function renderMessage(msg, isOwn) {
+    const container = document.getElementById('messagesContainer');
     const div = document.createElement('div');
-    div.className = 'message ' + (isOwn ? 'own' : '');
+    div.className = `message ${isOwn ? 'own' : ''}`;
     div.innerHTML = `
-        ${!isOwn ? `<img class="message-avatar" src="${msg.avatar || ''}" onerror="this.textContent='🦈'">` : ''}
+        ${!isOwn ? `<img class="message-avatar" src="${msg.senderAvatar || ''}" onerror="this.remove()">` : ''}
         <div class="message-body">
-            <div class="message-sender">${msg.sender} ${msg.tag ? '<span class="message-tag">'+msg.tag+'</span>' : ''}</div>
-            <div class="message-text">${msg.text}</div>
-            <div class="message-time">${msg.time}</div>
+            <div class="message-header">
+                <span class="message-sender">${escapeHtml(msg.senderName)}</span>
+                ${msg.senderTag ? `<span class="message-tag">${escapeHtml(msg.senderTag)}</span>` : ''}
+            </div>
+            <div class="message-text">${escapeHtml(msg.text)}</div>
+            <div class="message-time">${msg.timeFormatted}</div>
         </div>
     `;
-    document.getElementById('messagesContainer').appendChild(div);
-    document.getElementById('messagesContainer').scrollTop = 99999;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
 }
 
+function renderSticker(msg, isOwn) {
+    const container = document.getElementById('messagesContainer');
+    const div = document.createElement('div');
+    div.className = `message ${isOwn ? 'own' : ''}`;
+    div.innerHTML = `
+        ${!isOwn ? `<img class="message-avatar" src="${msg.senderAvatar || ''}" onerror="this.remove()">` : ''}
+        <div class="message-body">
+            <div class="message-header">
+                <span class="message-sender">${escapeHtml(msg.senderName)}</span>
+                ${msg.senderTag ? `<span class="message-tag">${escapeHtml(msg.senderTag)}</span>` : ''}
+            </div>
+            <img class="message-sticker-img" src="${msg.sticker}" alt="sticker">
+            <div class="message-time">${msg.timeFormatted}</div>
+        </div>
+    `;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+// ===== СТИКЕРЫ =====
 function loadStickers() {
-    const stickers = ['🦈','🌊','🐟','🦑','🐋','🦀','🐙','🦭','🐚','🪸','⚡','💀','🔥','💙','🦈💨','🌊✨','🐟💨','😎'];
-    document.getElementById('stickerGrid').innerHTML = stickers.map(s =>
-        `<div class="sticker-item" onclick="sendSticker('${s}')">${s}</div>`
-    ).join('');
+    fetch('/api/stickers').then(r => r.json()).then(s => {
+        allStickers = s;
+        renderStickerGrid();
+    });
+}
+
+function renderStickerGrid() {
+    const grid = document.getElementById('stickerGrid');
+    grid.innerHTML = allStickers.map(url => `
+        <div class="sticker-item" onclick="sendSticker('${url}')">
+            <img src="${url}" alt="sticker" loading="lazy">
+        </div>
+    `).join('');
 }
 
 function toggleStickers() {
     document.getElementById('stickerGrid').classList.toggle('open');
 }
 
-function sendSticker(sticker) {
-    if (!socket) return;
-    socket.emit('sendSticker', { sticker });
+function sendSticker(url) {
+    if (!currentChatId) return;
+    socket.emit('privateSticker', { targetId: currentChatId, stickerUrl: url });
     document.getElementById('stickerGrid').classList.remove('open');
 }
 
-function addSticker(msg, isOwn) {
-    const div = document.createElement('div');
-    div.className = 'message ' + (isOwn ? 'own' : '');
-    div.innerHTML = `
-        ${!isOwn ? `<img class="message-avatar" src="${msg.avatar || ''}" onerror="this.textContent='🦈'">` : ''}
-        <div class="message-body">
-            <div class="message-sender">${msg.sender} ${msg.tag ? '<span class="message-tag">'+msg.tag+'</span>' : ''}</div>
-            <div class="message-sticker">${msg.sticker}</div>
-            <div class="message-time">${msg.time}</div>
-        </div>
-    `;
-    document.getElementById('messagesContainer').appendChild(div);
-    document.getElementById('messagesContainer').scrollTop = 99999;
+function uploadNewSticker() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = () => {
+        const file = input.files[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append('sticker', file);
+        fetch('/api/stickers/upload', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                allStickers.push(data.url);
+                renderStickerGrid();
+            });
+    };
+    input.click();
 }
 
-loadRooms();
+// ===== ЗВОНКИ (WebRTC) =====
+async function startCall(targetId, callType) {
+    localStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: callType === 'video'
+    });
+    
+    peerConnection = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+    
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+    
+    peerConnection.onicecandidate = (e) => {
+        if (e.candidate) {
+            socket.emit('iceCandidate', { targetId, candidate: e.candidate });
+        }
+    };
+    
+    peerConnection.ontrack = (e) => {
+        const remoteVideo = document.getElementById('remoteVideo');
+        remoteVideo.srcObject = e.streams[0];
+        document.getElementById('callOverlay').classList.remove('hidden');
+    };
+    
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    
+    socket.emit('callOffer', { targetId, offer, callType });
+    
+    document.getElementById('localVideo').srcObject = localStream;
+    document.getElementById('callOverlay').classList.remove('hidden');
+}
+
+function endCall() {
+    if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+    }
+    if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
+        localStream = null;
+    }
+    document.getElementById('callOverlay').classList.add('hidden');
+    document.getElementById('localVideo').srcObject = null;
+    document.getElementById('remoteVideo').srcObject = null;
+    socket.emit('endCall', { targetId: currentChatId });
+}
+
+// ===== УТИЛИТЫ =====
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function toggleTagEditor() {
+    const el = document.getElementById('tagEditor');
+    el.classList.toggle('hidden');
+    if (!el.classList.contains('hidden')) document.getElementById('tagEditInput').focus();
+}
+
+function updateTag() {
+    const tag = document.getElementById('tagEditInput').value.trim();
+    document.getElementById('sidebarTag').textContent = tag;
+    document.getElementById('tagEditor').classList.add('hidden');
+    socket.emit('updateTag', tag);
+}
+
+function showEmailModal() { document.getElementById('emailModal').style.display = 'flex'; }
+function skipEmail() { document.getElementById('emailModal').style.display = 'none'; }
+
+function bindEmail() {
+    const email = document.getElementById('emailInput').value.trim();
+    if (!email) return;
+    fetch('/api/bind-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ socketId: socket.id, email })
+    }).then(r => r.json()).then(d => {
+        if (d.success) {
+            document.getElementById('sidebarEmail').textContent = email;
+            document.getElementById('emailModal').style.display = 'none';
+        } else alert(d.error);
+    });
+}
+
+// Предпросмотр аватарки
+document.getElementById('avatarFile')?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = (ev) => document.getElementById('avatarPreview').src = ev.target.result;
+        reader.readAsDataURL(file);
+    }
+});
+
+// Авторазмер поля ввода
+document.getElementById('messageInput')?.addEventListener('input', function() {
+    this.style.height = '50px';
+    this.style.height = Math.min(this.scrollHeight, 150) + 'px';
+});
