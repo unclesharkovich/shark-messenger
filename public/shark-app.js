@@ -93,29 +93,55 @@ function connect() {
 
 // ===== РЕГИСТРАЦИЯ =====
 function register() {
-    const username = document.getElementById('regUsername').value.trim() || 'Акула';
-    const tag = document.getElementById('regTag').value.trim();
+    const usernameEl = document.getElementById('usernameInput') || document.getElementById('regUsername');
+    const tagEl = document.getElementById('tagInput') || document.getElementById('regTag');
     
-    document.getElementById('sidebarName').textContent = username;
-    document.getElementById('sidebarTag').textContent = tag;
+    const username = (usernameEl && usernameEl.value.trim()) || 'Акула';
+    const tag = (tagEl && tagEl.value.trim()) || '';
     
-    const avatarFile = document.getElementById('avatarFile').files[0];
-    if (avatarFile) {
+    const sidebarName = document.getElementById('sidebarName');
+    const sidebarTag = document.getElementById('sidebarTag');
+    if (sidebarName) sidebarName.textContent = username;
+    if (sidebarTag) sidebarTag.textContent = tag;
+    
+    const avatarFile = document.getElementById('avatarFile');
+    if (avatarFile && avatarFile.files[0]) {
         const formData = new FormData();
-        formData.append('avatar', avatarFile);
+        formData.append('avatar', avatarFile.files[0]);
         fetch('/api/avatar', { method: 'POST', body: formData })
             .then(r => r.json())
             .then(data => {
-                document.getElementById('sidebarAvatar').src = data.url;
+                const sidebarAvatar = document.getElementById('sidebarAvatar');
+                if (sidebarAvatar) sidebarAvatar.src = data.url;
                 connect();
-                socket.emit('register', { username, customTag: tag, avatar: data.url });
+                setTimeout(() => {
+                    if (socket && socket.connected) {
+                        socket.emit('register', { username, customTag: tag, avatar: data.url });
+                    }
+                }, 300);
+            })
+            .catch(() => {
+                connect();
+                setTimeout(() => {
+                    if (socket && socket.connected) {
+                        socket.emit('register', { username, customTag: tag });
+                    }
+                }, 300);
             });
     } else {
         connect();
-        socket.emit('register', { username, customTag: tag });
+        setTimeout(() => {
+            if (socket && socket.connected) {
+                socket.emit('register', { username, customTag: tag });
+            }
+        }, 500);
     }
+    
+    const regPage = document.getElementById('registerPage');
+    const chatPage = document.getElementById('chatPage');
+    if (regPage) regPage.classList.add('hidden');
+    if (chatPage) chatPage.classList.remove('hidden');
 }
-
 function showChat() {
     document.getElementById('registerPage').classList.add('hidden');
     document.getElementById('chatPage').classList.remove('hidden');
